@@ -1,0 +1,187 @@
+{
+ "schema": 1,
+ "protocol": "paired: detected = defective fails AND clean passes; rates exact over the fixed request set (expressible only)",
+ "fleet_commit": "b93ab29",
+ "rows": [
+  {
+   "suite": "naive-contains",
+   "member": "citation-hallucinator",
+   "n": 200,
+   "detected": 0,
+   "detection_rate": 0.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "python"
+  },
+  {
+   "suite": "gradecore (diligent)",
+   "member": "citation-hallucinator",
+   "n": 200,
+   "detected": 200,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "gradecore 0.10.0"
+  },
+  {
+   "suite": "promptfoo (docs-style asserts)",
+   "member": "citation-hallucinator",
+   "n": 40,
+   "detected": 40,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "promptfoo 0.122.0 (real npx run)"
+  },
+  {
+   "suite": "naive-contains",
+   "member": "constraint-dropper",
+   "n": 200,
+   "detected": 0,
+   "detection_rate": 0.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "python"
+  },
+  {
+   "suite": "gradecore (diligent)",
+   "member": "constraint-dropper",
+   "n": 200,
+   "detected": 200,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "gradecore 0.10.0"
+  },
+  {
+   "suite": "promptfoo (docs-style asserts)",
+   "member": "constraint-dropper",
+   "n": 40,
+   "detected": 40,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "promptfoo 0.122.0 (real npx run)"
+  },
+  {
+   "suite": "naive-contains",
+   "member": "refuse-then-comply",
+   "n": 200,
+   "detected": 200,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "python"
+  },
+  {
+   "suite": "gradecore (diligent)",
+   "member": "refuse-then-comply",
+   "n": 200,
+   "detected": 200,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "gradecore 0.10.0"
+  },
+  {
+   "suite": "promptfoo (docs-style asserts)",
+   "member": "refuse-then-comply",
+   "n": 40,
+   "detected": 40,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "promptfoo 0.122.0 (real npx run)"
+  },
+  {
+   "suite": "naive-contains",
+   "member": "tool-arg-swapper",
+   "n": 200,
+   "detected": 0,
+   "detection_rate": 0.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "python"
+  },
+  {
+   "suite": "gradecore (diligent)",
+   "member": "tool-arg-swapper",
+   "n": 200,
+   "detected": 200,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "gradecore 0.10.0"
+  },
+  {
+   "suite": "promptfoo (docs-style asserts)",
+   "member": "tool-arg-swapper",
+   "n": 40,
+   "detected": 40,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "promptfoo 0.122.0 (real npx run)"
+  },
+  {
+   "suite": "naive-contains",
+   "member": "sycophancy-flip",
+   "n": 200,
+   "detected": 0,
+   "detection_rate": 0.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "python"
+  },
+  {
+   "suite": "gradecore (diligent)",
+   "member": "sycophancy-flip",
+   "n": 200,
+   "detected": 200,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "gradecore 0.10.0"
+  },
+  {
+   "suite": "promptfoo (docs-style asserts)",
+   "member": "sycophancy-flip",
+   "n": 40,
+   "detected": 40,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "promptfoo 0.122.0 (real npx run)"
+  },
+  {
+   "suite": "naive-contains",
+   "member": "stale-cutoff",
+   "n": 200,
+   "detected": 0,
+   "detection_rate": 0.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "python"
+  },
+  {
+   "suite": "gradecore (diligent)",
+   "member": "stale-cutoff",
+   "n": 200,
+   "detected": 200,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "gradecore 0.10.0"
+  },
+  {
+   "suite": "promptfoo (docs-style asserts)",
+   "member": "stale-cutoff",
+   "n": 40,
+   "detected": 40,
+   "detection_rate": 1.0,
+   "false_alarms": 0,
+   "false_alarm_rate": 0.0,
+   "engine": "promptfoo 0.122.0 (real npx run)"
+  }
+ ]
+}

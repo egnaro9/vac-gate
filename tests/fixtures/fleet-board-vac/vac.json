@@ -1,0 +1,92 @@
+{
+ "vac_version": "0.1",
+ "claim": {
+  "capability": "suite-archetype detection rates over certified defect models",
+  "scope": "paired: detected = defective fails AND clean passes; rates exact over the fixed request set (expressible only); archetypes: naive-contains, gradecore (diligent), promptfoo (docs-style asserts)",
+  "limitations": [
+   "diligent archetypes were authored with ground-truth knowledge; 1.000 rows prove the ceiling is reachable, not typically reached",
+   "constructed members, stated request format only"
+  ]
+ },
+ "subject": {
+  "kind": "suite-archetype",
+  "id": "suite-archetype set: naive-contains, gradecore (diligent), promptfoo (docs-style asserts)",
+  "version": {
+   "naive-contains": "python",
+   "gradecore (diligent)": "gradecore 0.10.0",
+   "promptfoo (docs-style asserts)": "promptfoo 0.122.0 (real npx run)"
+  }
+ },
+ "protocol": {
+  "issuer": "egnaro9/reference-fleet",
+  "issuer_commit": "b93ab29",
+  "task": "audit board",
+  "hashes": {
+   "fleet_commit": "b93ab29"
+  },
+  "grading": "deterministic: each archetype's real engine grades fixed deterministic fleet outputs; every rate an exact count over the fixed request set; no sampling, no judge",
+  "control_policy": "the clean twin (rate=0.0) graded beside every defective response; detected requires defective fails AND clean passes, so a suite failing both certifies nothing"
+ },
+ "evidence": [
+  {
+   "path": "results.json",
+   "sha256": "6a6c5be75738155543057a4a7a1ed717564cb9b74d681ec52e18a039c779f3cd"
+  },
+  {
+   "path": "raw_results.jsonl",
+   "sha256": "8a41dcffaae8e5a5da94a759e535684dfd80052e510d3c860af33b5b269f877c"
+  }
+ ],
+ "results": {
+  "summary": {
+   "rows": 18,
+   "suites": {
+    "naive-contains": {
+     "members": 6,
+     "n": 1200,
+     "detected": 200,
+     "false_alarms": 0,
+     "detection_rate": 0.167,
+     "false_alarm_rate": 0.0
+    },
+    "gradecore (diligent)": {
+     "members": 6,
+     "n": 1200,
+     "detected": 1200,
+     "false_alarms": 0,
+     "detection_rate": 1.0,
+     "false_alarm_rate": 0.0
+    },
+    "promptfoo (docs-style asserts)": {
+     "members": 6,
+     "n": 240,
+     "detected": 240,
+     "false_alarms": 0,
+     "detection_rate": 1.0,
+     "false_alarm_rate": 0.0
+    }
+   }
+  },
+  "checks": [
+   {
+    "profile": "fleet-board-v1",
+    "aggregate": "results.json",
+    "raw": "raw_results.jsonl",
+    "expect": {
+     "rows": 18
+    }
+   }
+  ]
+ },
+ "replay": {
+  "issuer_commit": "b93ab29",
+  "commands": [
+   "git clone https://github.com/egnaro9/reference-fleet",
+   "git -C reference-fleet checkout b93ab29",
+   "pip install -e \"./reference-fleet[audit]\"",
+   "( cd reference-fleet && python audit/run_audit.py )",
+   "cmp reference-fleet/board/vac/results.json results.json && cmp reference-fleet/board/vac/raw_results.jsonl raw_results.jsonl && cmp reference-fleet/board/vac/vac.json vac.json"
+  ],
+  "expected": "every command exits 0 and cmp stays silent: the audit at the stamped commit re-emits results.json, raw_results.jsonl, and vac.json byte-identical to this bundle (commands run from the bundle directory)"
+ }
+}

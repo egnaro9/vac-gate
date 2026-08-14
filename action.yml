@@ -1,0 +1,63 @@
+name: vac-gate
+description: >-
+  Require a verified capability contract before this workflow passes: a VAC
+  bundle (vac-protocol SPEC v0.1) structurally verified by the real
+  python -m vac.verify, held to exact subject/family requirements, and
+  optionally re-earned by the issuer's own regrader at the pinned commit.
+  Every failure is one named reason.
+inputs:
+  bundle_path:
+    description: >-
+      Path to a VAC bundle directory in this checkout. Exactly one of
+      bundle_path / registry_entry.
+    required: false
+    default: ""
+  registry_entry:
+    description: >-
+      Name of an accepted entry in egnaro9/vac-protocol's registry.json
+      (e.g. agent-certlab/claude-code-machine-2026-08-14), fetched with
+      every artifact sha256-checked against its registry pin via
+      python -m vac.registry --fetch-bundle.
+    required: false
+    default: ""
+  require_agent:
+    description: >-
+      Exact subject.id the bundle must certify (e.g. claude-code-headless);
+      anything else fails with agent-mismatch. Empty = any subject passes.
+    required: false
+    default: ""
+  require_family:
+    description: >-
+      Exact protocol.task the bundle must cover (e.g. machine); anything
+      else fails with family-mismatch. Empty = any family passes.
+    required: false
+    default: ""
+  regrade:
+    description: >-
+      "true" = also clone the issuer at the pinned issuer_commit and
+      re-earn every verdict with its own regrader (v1 supports
+      certlab-bundle-v1 bundles only; on any other profile the gate FAILS
+      with regrade-unsupported rather than silently skipping). Anything
+      but a 'consistent' regrade fails.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: install vac-protocol
+      # Hard requirement, never guarded: a failed install must fail the
+      # gate — a silently-inert verifier reading as green is exactly what
+      # this action exists to prevent.
+      shell: bash
+      run: python3 -m pip install --quiet "git+https://github.com/egnaro9/vac-protocol"
+    - name: gate
+      # Inputs cross into the script as environment, never interpolated
+      # into shell text — an input value cannot become shell syntax.
+      shell: bash
+      env:
+        VAC_GATE_BUNDLE_PATH: ${{ inputs.bundle_path }}
+        VAC_GATE_REGISTRY_ENTRY: ${{ inputs.registry_entry }}
+        VAC_GATE_REQUIRE_AGENT: ${{ inputs.require_agent }}
+        VAC_GATE_REQUIRE_FAMILY: ${{ inputs.require_family }}
+        VAC_GATE_REGRADE: ${{ inputs.regrade }}
+      run: python3 "${GITHUB_ACTION_PATH}/gate.py"

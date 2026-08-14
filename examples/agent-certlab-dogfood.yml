@@ -1,0 +1,26 @@
+name: capability-contract
+# agent-certlab gating on its OWN committed capability contract: the repo
+# that issues contracts holds itself to one. bundle_path points at a
+# committed certification; regrade clones this same repo at the bundle's
+# pinned issuer_commit and re-earns all its verdicts with
+# python -m certlab.regrade — anything but 'consistent' fails the
+# workflow, including the regrader's honest 'stale-code' refusal.
+#
+# This file lives in vac-gate's examples/ on purpose: copy it into
+# agent-certlab's .github/workflows/ to adopt. vac-gate does not commit
+# into its consumers.
+on: [push, pull_request]
+jobs:
+  capability-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: egnaro9/vac-gate@main
+        with:
+          bundle_path: certifications/claude-code-machine-2026-08-14
+          require_agent: claude-code-headless
+          require_family: machine
+          regrade: "true"

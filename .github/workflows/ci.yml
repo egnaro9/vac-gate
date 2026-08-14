@@ -1,0 +1,26 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # the tests drive gate.py exactly as the composite does, so its one
+      # dependency is installed the same way the composite installs it
+      - run: python -m pip install pytest "git+https://github.com/egnaro9/vac-protocol"
+      - run: python -m pytest tests/ -q
+      # and the action must also work AS an action: gate the committed
+      # fixture through action.yml's own entry point (liveness for the
+      # composite wiring itself, not just the script under it)
+      - name: gate the fixture through the composite entry point
+        uses: ./
+        with:
+          bundle_path: tests/fixtures/claude-code-machine-2026-08-14
+          require_agent: claude-code-headless
+          require_family: machine
