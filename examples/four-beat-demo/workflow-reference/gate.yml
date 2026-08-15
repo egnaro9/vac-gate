@@ -1,0 +1,61 @@
+name: capability-contract
+# The four beats as CI jobs — ALL FOUR ARE GREEN, because the failure
+# beats assert that the gate FAILS with its named reason. Beat 1 is the
+# real consumer wiring (uses: egnaro9/vac-gate@main directly); beats
+# 2-4 must invert the gate's exit code, so they drive gate.py from a
+# vac-gate checkout through run_demo.sh, which asserts nonzero + the
+# named reason.
+on: [push, pull_request]
+jobs:
+  beat-1-contract-holds:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: egnaro9/vac-gate@main
+        with:
+          bundle_path: certifications/claude-code-machine-2026-08-14
+          bindings: bindings.json
+          require_agent: claude-code-headless
+          require_family: machine
+  beat-2-drift-is-caught:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: egnaro9/vac-gate
+          path: .vac-gate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet "git+https://github.com/egnaro9/vac-protocol"
+      - run: VAC_GATE=.vac-gate ./run_demo.sh 2
+  beat-3-repointed-passes-again:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: egnaro9/vac-gate
+          path: .vac-gate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet "git+https://github.com/egnaro9/vac-protocol"
+      - run: VAC_GATE=.vac-gate ./run_demo.sh 3
+  beat-4-tamper-is-caught:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: egnaro9/vac-gate
+          path: .vac-gate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet "git+https://github.com/egnaro9/vac-protocol"
+      - run: VAC_GATE=.vac-gate ./run_demo.sh 4

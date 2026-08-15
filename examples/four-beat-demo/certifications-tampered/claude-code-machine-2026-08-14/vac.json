@@ -1,0 +1,71 @@
+{
+ "vac_version": "0.1",
+ "claim": {
+  "capability": "repair-seeded-defects:machine \u2014 claude-code-headless fixed 6/6 seeded defects under policy",
+  "scope": "exactly the task family named by its hash \u2014 defects seeded into that family's sources (a coordinated defect spans several files), with its untouched test suite as the complete specification \u2014 and nothing beyond it",
+  "limitations": [
+   "grading reads on-disk artifacts only; the agent's self-report is never consulted",
+   "covers exactly the task family pinned by protocol.hashes and says nothing beyond it \u2014 no cross-family or open-world capability is claimed",
+   "replay re-earns the GRADING, not the agent run: verdicts are recomputed from issued hashes plus recorded diffs without re-running any agent"
+  ]
+ },
+ "subject": {
+  "kind": "agent",
+  "id": "claude-code-headless",
+  "version": {
+   "model": null,
+   "harness_commit": "7954393",
+   "python": "3.14.6"
+  }
+ },
+ "protocol": {
+  "issuer": "egnaro9/agent-certlab",
+  "issuer_commit": "7954393",
+  "task": "machine",
+  "hashes": {
+   "taskset_hash": "4430506556753096",
+   "prompt_hash": "a61a9abe48592e97"
+  },
+  "grading": "artifacts-only; policy(suite byte-identical, allowed paths) then pytest; fixed = both",
+  "control_policy": "constructed calibration agents gate every certification (tests/test_wedge_calibration.py): null fixes 0, oracle fixes all, test-deleter is failed by POLICY despite green pytest, forbidden-file is failed by the allowed-paths layer, unavailable reads agent-unavailable \u2014 a wedge that cannot separate them certifies nothing"
+ },
+ "evidence": [
+  {
+   "path": "CONTRACT.md",
+   "sha256": "647add46c149a58bdd9528248422686d815c9a1215f3a667b7fb7452c8f7c7e3"
+  },
+  {
+   "path": "bundle.json",
+   "sha256": "bd21e628a5c057babf4e55112ce778cec343b8cee529052af4f303b27482780f"
+  }
+ ],
+ "results": {
+  "summary": {
+   "tasks": 6,
+   "fixed": 6,
+   "failure_modes": {}
+  },
+  "checks": [
+   {
+    "profile": "certlab-bundle-v1",
+    "artifact": "bundle.json",
+    "expect": {
+     "verdicts": 6,
+     "fixed": 6,
+     "policy_ok": 6,
+     "tests_ok": 6
+    }
+   }
+  ]
+ },
+ "replay": {
+  "issuer_commit": "7954393",
+  "commands": [
+   "git clone https://github.com/egnaro9/agent-certlab issuer",
+   "git -C issuer checkout 7954393",
+   "python -m pip install -e './issuer[test]'",
+   "python -m certlab.regrade bundle.json"
+  ],
+  "expected": "exit 0; regrade reports 'consistent \u2014 6/6 verdicts recomputed identical'"
+ }
+}

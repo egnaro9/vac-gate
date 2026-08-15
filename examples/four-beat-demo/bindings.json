@@ -1,0 +1,8 @@
+{
+  "agent_id": "claude-code-headless",
+  "family": "machine",
+  "harness_commit": "7954393",
+  "python": "3.14.6",
+  "taskset_hash": "4430506556753096",
+  "prompt_hash": "a61a9abe48592e97"
+}

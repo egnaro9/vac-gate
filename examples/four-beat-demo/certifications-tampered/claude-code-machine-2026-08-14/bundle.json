@@ -1,0 +1,124 @@
+{
+ "schema": 1,
+ "agent_id": "claude-code-headless",
+ "agent_kind": "real",
+ "model": null,
+ "family": "machine",
+ "harness_commit": "7954393",
+ "harness_dirty_outside_certifications": false,
+ "taskset_hash": "4430506556753096",
+ "prompt_hash": "a61a9abe48592e97",
+ "env": {
+  "python": "3.14.6",
+  "platform": "macOS-26.6-arm64-arm-64bit-Mach-O"
+ },
+ "grading": "artifacts-only; policy(suite byte-identical, allowed paths) then pytest; fixed = both",
+ "verdicts": [
+  {
+   "task_id": "mc-shape-drift",
+   "defect_class": "coordinated/node-shape",
+   "policy_ok": true,
+   "tests_ok": true,
+   "fixed": true,
+   "failure_mode": "",
+   "changed_files": [
+    "calc/evaluator.py",
+    "calc/parser.py"
+   ],
+   "diffs": {
+    "calc/evaluator.py": "--- issued/calc/evaluator.py\n+++ after/calc/evaluator.py\n@@ -50,7 +50,7 @@\n     if tag == \"neg\":\n         return -evaluate(node[1], env)\n     if tag == \"bin\":\n-        _, left, op, right = node\n+        _, op, left, right = node\n         return _apply(op, evaluate(left, env), evaluate(right, env))\n     if tag == \"let\":\n         _, name, bound, body = node\n",
+    "calc/parser.py": "--- issued/calc/parser.py\n+++ after/calc/parser.py\n@@ -75,7 +75,7 @@\n         ts.next()\n         op = value\n         rhs = _expr(ts, BP[op] if op == \"**\" else BP[op] + 1)\n-        node = (\"bin\", node, op, rhs)\n+        node = (\"bin\", op, node, rhs)\n     return node\n \n \n"
+   },
+   "agent_note": "exit 0; last output: ' four attempts (plain `python3 -c \"print(1)\"` too). Please approve it, or run it yourself. I hand-traced all 18 tests against the patched code and they check out, but that\\'s a trace, not a green run.\\n'",
+   "seconds": 86.7,
+   "agent_raw": "**Fixed \u2014 two lines, one bug.** The `(\"bin\", ...)` node had drifted to operand-first on *both* sides:\n\n- `calc/parser.py:78` \u2014 `(\"bin\", node, op, rhs)` \u2192 `(\"bin\", op, node, rhs)`\n- `calc/evaluator.py:53` \u2014 `_, left, op, right = node` \u2192 `_, op, left, right = node`\n\n`\u2605 Insight \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n- **The two errors cancelled**, so every end-to-end path was already green \u2014 `evaluate(\"1+2*3\")` returned 7 before the fix. Only the isolation tests (`test_parser_shape_*`, `test_eval_binary_nodes_directly`) could see it, which is exactly what `test_calc.py:33` warns about.\n- **Op-first isn't arbitrary** \u2014 it's what `parser.py:7` documents and what the tests pin. The code had drifted from its own docstring, so the docstring settled which side was wrong.\n- **A subtle trap here**: `(\"bin\", \"-\", a, b)` and `(\"bin\", a, \"-\", b)` are both 4-tuples, so nothing crashes on the wrong shape \u2014 it just silently reads `left` as an operator string. Positional tuple ASTs buy speed and give up exactly this kind of guardrail; a `NamedTuple` or dataclass would have made the drift a `TypeError` at the boundary.\n`\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n\n**I could not run the suite** \u2014 `python3 -m pytest -q` needs approval in this session and was blocked on four attempts (plain `python3 -c \"print(1)\"` too). Please approve it, or run it yourself. I hand-traced all 18 tests against the patched code and they check out, but that's a trace, not a green run.\n"
+  },
+  {
+   "task_id": "mc-power-token-split",
+   "defect_class": "coordinated/token-stream",
+   "policy_ok": true,
+   "tests_ok": true,
+   "fixed": true,
+   "failure_mode": "",
+   "changed_files": [
+    "calc/parser.py",
+    "calc/tokenizer.py"
+   ],
+   "diffs": {
+    "calc/parser.py": "--- issued/calc/parser.py\n+++ after/calc/parser.py\n@@ -13,6 +13,7 @@\n from calc.tokenizer import tokenize\n \n BP = {\"+\": 10, \"-\": 10, \"*\": 20, \"/\": 20, \"**\": 30}\n+RIGHT_ASSOC = (\"**\",)\n NEG_BP = 25   # unary minus: tighter than * /, looser than **\n \n \n@@ -74,10 +75,9 @@\n             break\n         ts.next()\n         op = value\n-        if op == \"*\" and ts.peek()[:2] == (\"op\", \"*\"):\n-            ts.next()\n-            op = \"**\"\n-        rhs = _expr(ts, BP[op] + 1)\n+        # left-assoc operators require the rhs to bind strictly tighter;\n+        # ** is right-assoc, so an equal-power operator may still be taken.\n+        rhs = _expr(ts, BP[op] if op in RIGHT_ASSOC else BP[op] + 1)\n         node = (\"bin\", op, node, rhs)\n     return node\n \n",
+    "calc/tokenizer.py": "--- issued/calc/tokenizer.py\n+++ after/calc/tokenizer.py\n@@ -36,6 +36,10 @@\n             word = src[start:i]\n             tokens.append((word if word in KEYWORDS else \"name\", word, start))\n             continue\n+        if src.startswith(\"**\", i):\n+            tokens.append((\"op\", \"**\", start))\n+            i += 2\n+            continue\n         if src[i] in OPS:\n             tokens.append((\"op\", src[i], start))\n             i += 1\n"
+   },
+   "agent_note": "exit 0; last output: \"` rather than `4` \u2014 the same choice Python makes, and it's expressible purely as a number here because unary minus is a prefix op with its own rbp.\\n`\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\\n\"",
+   "seconds": 77.9,
+   "agent_raw": "I need permission to run the suite \u2014 Bash is blocking `pytest`. Please approve (or run it yourself). In the meantime, here's what changed and the hand-trace:\n\n**`calc/tokenizer.py:39-42`** \u2014 added a maximal-munch `**` branch ahead of the single-char `OPS` branch. `2**3` now lexes to `(\"op\", \"**\", 1)` instead of two `*` tokens.\n\n**`calc/parser.py:16,77-81`** \u2014 deleted the `*` + `*` re-merge hack (dead once the tokenizer is right) and made `**` right-associative via a `RIGHT_ASSOC` set: left-assoc ops recurse with `BP+1`, `**` recurses with `BP`, so an equal-power `**` on the right is still consumed.\n\nTrace of the cases the suite pins:\n- `2**3**2` \u2192 rhs parsed at min_bp 30, peeked `**` is 30 \u2265 30 \u2192 `(\"bin\",\"**\",2,(\"bin\",\"**\",3,2))` = 512 \u2713\n- `8-3-2` \u2192 rhs at 11, peeked `-` is 10 < 11 \u2192 left-nested \u2713\n- `-2**2` \u2192 `NEG_BP` 25, `**` 30 \u2265 25 \u2192 `(\"neg\",(\"bin\",\"**\",2,2))` = -4 \u2713\n- `-2*3` \u2192 `*` 20 < 25 \u2192 `(\"bin\",\"*\",(\"neg\",2),3)` \u2713\n\n`\u2605 Insight \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n- In Pratt parsing, associativity is *entirely* the right-recursion's min binding power: `BP+1` (strictly-greater required) = left-assoc, `BP` (equal allowed) = right-assoc. No separate table needed.\n- `NEG_BP = 25` sitting between `*` (20) and `**` (30) is what makes `-2**2 == -4` rather than `4` \u2014 the same choice Python makes, and it's expressible purely as a number here because unary minus is a prefix op with its own rbp.\n`\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n"
+  },
+  {
+   "task_id": "mc-precedence-flat",
+   "defect_class": "operator-precedence",
+   "policy_ok": true,
+   "tests_ok": true,
+   "fixed": true,
+   "failure_mode": "",
+   "changed_files": [
+    "calc/parser.py"
+   ],
+   "diffs": {
+    "calc/parser.py": "--- issued/calc/parser.py\n+++ after/calc/parser.py\n@@ -12,7 +12,7 @@\n \n from calc.tokenizer import tokenize\n \n-BP = {\"+\": 10, \"-\": 10, \"*\": 10, \"/\": 20, \"**\": 30}\n+BP = {\"+\": 10, \"-\": 10, \"*\": 20, \"/\": 20, \"**\": 30}\n NEG_BP = 25   # unary minus: tighter than * /, looser than **\n \n \n"
+   },
+   "agent_note": "exit 0; last output: 'm opposite sides, `-2**2` \u2192 `(\"neg\", (\"bin\",\"**\",...))` (needs `NEG_BP` above the `*`/`/` tier) and `-2*3` \u2192 `(\"bin\",\"*\",(\"neg\",...),...)` (needs it below `**`) \u2014 but please approve a run to confirm.\\n'",
+   "seconds": 79.5,
+   "agent_raw": "`\u2605 Insight \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n- Why this bug is sneaky: **only** `1+2*3` distinguishes it. `-2*3` still parses correctly with the broken table (`10 < NEG_BP=25` and `20 < 25` both break the loop), and `8-3-2`, `2**3**2`, `7/2` are all untouched \u2014 so a thin test suite would stay green. The test file's comment about pinning \"the CLEAN shape\" is exactly guarding this class of drift.\n- The fix had to go in the binding-power table, not the evaluator. The suite deliberately calls `eval_node` on hand-built tuples (line 75+), so a \"compensating\" evaluator that reassociated nodes would fail those tests even while making the end-to-end ones pass.\n`\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n\n**Fixed:** `calc/parser.py:15` \u2014 `\"*\"` had binding power `10` (the `+`/`-` tier) instead of `20` (the `/` tier), so `1+2*3` associated as `(1+2)*3 == 9`.\n\n```\n-BP = {\"+\": 10, \"-\": 10, \"*\": 10, \"/\": 20, \"**\": 30}\n+BP = {\"+\": 10, \"-\": 10, \"*\": 20, \"/\": 20, \"**\": 30}\n```\n\n**I could not run `python -m pytest -q` \u2014 every Bash call was denied by the permission prompt** (`python`, `python3 -m pytest`, `pytest`, and a `python3 -c` spot-check all came back \"requires approval\"). So the fix is verified by hand-tracing the parser against all 15 tests, not by a green run. The traces check out \u2014 including the two that constrain the fix from opposite sides, `-2**2` \u2192 `(\"neg\", (\"bin\",\"**\",...))` (needs `NEG_BP` above the `*`/`/` tier) and `-2*3` \u2192 `(\"bin\",\"*\",(\"neg\",...),...)` (needs it below `**`) \u2014 but please approve a run to confirm.\n"
+  },
+  {
+   "task_id": "mc-power-left-assoc",
+   "defect_class": "associativity",
+   "policy_ok": true,
+   "tests_ok": true,
+   "fixed": true,
+   "failure_mode": "",
+   "changed_files": [
+    "calc/parser.py"
+   ],
+   "diffs": {
+    "calc/parser.py": "--- issued/calc/parser.py\n+++ after/calc/parser.py\n@@ -13,6 +13,7 @@\n from calc.tokenizer import tokenize\n \n BP = {\"+\": 10, \"-\": 10, \"*\": 20, \"/\": 20, \"**\": 30}\n+RIGHT_ASSOC = {\"**\"}\n NEG_BP = 25   # unary minus: tighter than * /, looser than **\n \n \n@@ -74,7 +75,10 @@\n             break\n         ts.next()\n         op = value\n-        rhs = _expr(ts, BP[op] + 1)\n+        # right-assoc re-enters at the operator's own bp so an equal-precedence\n+        # operator is absorbed by the recursion; left-assoc uses bp+1 so it is\n+        # left for this loop, nesting the other way.\n+        rhs = _expr(ts, BP[op] if op in RIGHT_ASSOC else BP[op] + 1)\n         node = (\"bin\", op, node, rhs)\n     return node\n \n"
+   },
+   "agent_note": "exit 0; last output: \" `python -m pytest -q` yourself to confirm \u2014 I'd rather you see the actual output than take my trace for it. If you want me to run it, approving `python3 -m pytest` for this session would unblock me.\\n\"",
+   "seconds": 107.1,
+   "agent_raw": "Fixed. The bug was in `calc/parser.py` \u2014 but I could **not** run the suite: every `python3 -m pytest` / `python3 -c` invocation came back `This command requires approval` and was denied, so the verification below is a hand-trace, not a green run.\n\n**The bug** (`calc/parser.py:77`): the binary-operator loop always recursed with `BP[op] + 1`, which forces *left* associativity on every operator \u2014 contradicting the module docstring at line 10 and making `2**3**2` parse as `(\"bin\",\"**\",(\"bin\",\"**\",2,3),2)` \u2192 `64` instead of `512`.\n\n**The fix**: added `RIGHT_ASSOC = {\"**\"}` and made the recursion's minimum binding power depend on it:\n\n```python\nrhs = _expr(ts, BP[op] if op in RIGHT_ASSOC else BP[op] + 1)\n```\n\n`\u2605 Insight \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n- Only the parser was wrong. The evaluator's `**` (`left ** right`) and the tokenizer's `**`-before-`*` ordering were both already correct \u2014 which is why the suite splits *shape* tests (`parse(...) == tuple`) from *hand-built-node* eval tests: neither layer can mask the other's drift with a compensating bug.\n- `NEG_BP = 25` sitting between `*`/`/` (20) and `**` (30) is what makes `-2**2 == -4` and `-2*3 == (-2)*3` both fall out of one rule, with no special-casing \u2014 unary minus grabs everything binding tighter than 25 and stops at everything looser.\n`\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`\n\nTraced against the tests, the three that hinged on this now hold: `test_parser_shape_power_is_right_associative`, `test_api_arithmetic_end_to_end` (`2**3**2 == 512`), and the left-assoc/unary-minus cases are unaffected (`8-3-2` still nests left; `-2**2` still yields `(\"neg\", (\"bin\",\"**\",2,2))`).\n\nPlease run `python -m pytest -q` yourself to confirm \u2014 I'd rather you see the actual output than take my trace for it. If you want me to run it, approving `python3 -m pytest` for this session would unblock me.\n"
+  },
+  {
+   "task_id": "mc-shadow-leak",
+   "defect_class": "scope-leak",
+   "policy_ok": true,
+   "tests_ok": true,
+   "fixed": true,
+   "failure_mode": "",
+   "changed_files": [
+    "calc/evaluator.py"
+   ],
+   "diffs": {
+    "calc/evaluator.py": "--- issued/calc/evaluator.py\n+++ after/calc/evaluator.py\n@@ -54,6 +54,5 @@\n         return _apply(op, evaluate(left, env), evaluate(right, env))\n     if tag == \"let\":\n         _, name, bound, body = node\n-        env.vars[name] = evaluate(bound, env)\n-        return evaluate(body, env)\n+        return evaluate(body, env.child(name, evaluate(bound, env)))\n     raise EvalError(f\"unknown node: {tag!r}\")\n"
+   },
+   "agent_note": "exit 0; last output: \" `**`, unary-minus-vs-power, and both error positions all check out unmodified, so this is the only bug.\\n\\nPlease run `python -m pytest -q` yourself to confirm, or approve the command and I'll run it.\\n\"",
+   "seconds": 84.2,
+   "agent_raw": "Fixed \u2014 one line in `calc/evaluator.py`. **I was not able to run the suite: every `python3 -m pytest` invocation was denied by the permission layer**, so the verification below is a hand-trace, not a green run.\n\n```python\n    if tag == \"let\":\n        _, name, bound, body = node\n        return evaluate(body, env.child(name, evaluate(bound, env)))\n```\n\nThe mutation (`env.vars[name] = ...`) leaked bindings out of the `let` body. Four tests were failing on it: the two direct-mutation/shadowing tests, plus `evaluate(\"(let x = 2 in x) + x\")` which was silently returning 4 instead of raising `undefined variable: x`. I traced tokenizer, parser, and api against their tests as well \u2014 precedence, right-assoc `**`, unary-minus-vs-power, and both error positions all check out unmodified, so this is the only bug.\n\nPlease run `python -m pytest -q` yourself to confirm, or approve the command and I'll run it.\n"
+  },
+  {
+   "task_id": "mc-pos-off-by-one",
+   "defect_class": "boundary/off-by-one",
+   "policy_ok": true,
+   "tests_ok": true,
+   "fixed": true,
+   "failure_mode": "",
+   "changed_files": [
+    "calc/tokenizer.py"
+   ],
+   "diffs": {
+    "calc/tokenizer.py": "--- issued/calc/tokenizer.py\n+++ after/calc/tokenizer.py\n@@ -44,6 +44,6 @@\n             tokens.append((\"op\", src[i], start))\n             i += 1\n             continue\n-        raise TokenizeError(f\"unexpected character {src[i]!r}\", start + 1)\n+        raise TokenizeError(f\"unexpected character {src[i]!r}\", start)\n     tokens.append((\"end\", \"\", len(src)))\n     return tokens\n"
+   },
+   "agent_note": "exit 0; last output: 'rror` for `\"1 + )\"` already carries position 4 from the token, unmodified.\\n\\nPlease approve one of the pytest commands (or run it yourself) to confirm \u2014 my hand-trace is not a substitute for green CI.\\n'",
+   "seconds": 50.1,
+   "agent_raw": "All 20 tests should now pass, but I can't confirm \u2014 both `python3 -m pytest -q` and `pytest -q` were blocked pending approval, so **the fix is unverified by an actual run**.\n\n**The fix** \u2014 `calc/tokenizer.py:47`:\n\n```python\nraise TokenizeError(f\"unexpected character {src[i]!r}\", start + 1)  # was\nraise TokenizeError(f\"unexpected character {src[i]!r}\", start)      # now\n```\n\nFor `\"1 + $\"`, `$` sits at index 4; the old code reported 5. That single value fails two tests: `test_tokens_error_position_is_zero_based` (asserts `pos == 4` and the exact message) and `test_api_error_messages_carry_exact_positions` (same position, surfaced through `CalcError`).\n\nI traced the other layers against their tests by hand and found nothing else off:\n- `-2**2` \u2192 `(\"neg\", (\"bin\", \"**\", ...))` and `-2*3` \u2192 `(\"bin\", \"*\", (\"neg\", ...), ...)`, so `NEG_BP = 25` sitting between `*`/`/` (20) and `**` (30) is doing its job.\n- `_expr`'s `BP[op] if op == \"**\" else BP[op] + 1` gives `**` right-associativity and everything else left \u2014 matches the two associativity tests.\n- The `ParseError` for `\"1 + )\"` already carries position 4 from the token, unmodified.\n\nPlease approve one of the pytest commands (or run it yourself) to confirm \u2014 my hand-trace is not a substitute for green CI.\n"
+  }
+ ]
+}
