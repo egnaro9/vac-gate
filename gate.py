@@ -19,7 +19,13 @@ check is worse than no gate:
   skipping;
 - VAC bundles carry no dates BY DESIGN, so this gate proves
   pinned-and-honest, never recent — age-based freshness is not faked
-  here (README, "Freshness: the honest gap").
+  here (README, "Freshness: the honest gap");
+- semantic invalidation (the bindings input) detects changes in
+  DECLARED bindings only — undisclosed provider changes, runtime
+  context, tool behavior, and distribution shift are all outside it;
+  the gate is a claim-integrity control, never runtime authorization,
+  and makes no non-repudiation claim (bundles are unsigned by design,
+  SPEC section 7).
 
 Security posture: the manifest's replay.commands are NEVER executed —
 regrade is structured from validated fields only (protocol.issuer must
@@ -121,6 +127,84 @@ def check_requirements(man: dict, require_agent: str, require_family: str,
         ran.append(f"require_family: protocol.task == {require_family!r}")
 
 
+def _obj(d: dict, key: str) -> dict:
+    v = d.get(key)
+    return v if isinstance(v, dict) else {}
+
+
+def check_bindings(man: dict | None, path: str, failures: list[str],
+                   ran: list[str], skipped: list[str]) -> None:
+    """Semantic invalidation v1: the consumer declares its CURRENT bound
+    inputs as a JSON object; every declared key the contract records
+    (natural names mapped onto subject/protocol pins) must equal the
+    recorded value exactly — canonical-JSON equality, no type coercion.
+    A declared key the contract never recorded fails binding-unrecorded:
+    unrecorded is not matching, and a null pin (the issuer explicitly
+    recording 'not pinned') binds nothing, so it is unrecorded too — a
+    gate that read an unpinned input as 'matching your current one'
+    would be laundering the claim. Detects changes in DECLARED bindings
+    only; the final report's scope lines say what that excludes."""
+    try:
+        obj = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    except OSError:
+        failures.append(f"bindings-not-found: {path!r} is not a readable "
+                        "file in this checkout — a bindings input that "
+                        "cannot be read must fail, never degrade to 'no "
+                        "bindings declared'")
+        return
+    except (UnicodeDecodeError, json.JSONDecodeError) as ex:
+        failures.append(f"bindings-unparsable: {path!r}: {ex}")
+        return
+    if not isinstance(obj, dict):
+        failures.append(f"bindings-unparsable: {path!r}: top level must "
+                        "be a JSON object of current bound inputs")
+        return
+    if man is None:
+        skipped.append("semantic invalidation: declared bindings not "
+                       "compared — no parseable manifest (failures above)")
+        return
+    if not obj:
+        skipped.append("semantic invalidation: the bindings file declares "
+                       "no keys — nothing was compared")
+        return
+    subject, protocol = _obj(man, "subject"), _obj(man, "protocol")
+    version, hashes = _obj(subject, "version"), _obj(protocol, "hashes")
+    named = {"agent_id": ("subject.id", subject.get("id")),
+             "agent_kind": ("subject.kind", subject.get("kind")),
+             "agent_version": ("subject.version", version or None),
+             "family": ("protocol.task", protocol.get("task")),
+             "issuer": ("protocol.issuer", protocol.get("issuer")),
+             "issuer_commit": ("protocol.issuer_commit",
+                               protocol.get("issuer_commit"))}
+    matched = 0
+    for key in sorted(obj):
+        cur = obj[key]
+        if key in named:
+            where, rec = named[key]
+        elif key in version:
+            where, rec = f"subject.version.{key}", version[key]
+        elif key in hashes:
+            where, rec = f"protocol.hashes.{key}", hashes[key]
+        else:
+            failures.append(f"binding-unrecorded: {key} — the contract "
+                            "does not bind this input")
+            continue
+        if rec is None:
+            failures.append(f"binding-unrecorded: {key} — the contract "
+                            f"does not bind this input ({where} is "
+                            "recorded null: explicitly unpinned, and "
+                            "unpinned is not a match)")
+        elif json.dumps(cur, sort_keys=True) != json.dumps(rec,
+                                                          sort_keys=True):
+            failures.append(f"binding-drift: {key}: current {cur!r} != "
+                            f"contract {rec!r}")
+        else:
+            matched += 1
+    ran.append(f"semantic invalidation: {len(obj)} declared binding(s) "
+               "compared to recorded subject/protocol pins, "
+               f"{matched} matched exactly")
+
+
 def run_regrade(man: dict, bundle: pathlib.Path, tmp: pathlib.Path,
                 clone_base: str, failures: list[str],
                 ran: list[str]) -> None:
@@ -191,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--require-agent", default=e("VAC_GATE_REQUIRE_AGENT", ""))
     ap.add_argument("--require-family",
                     default=e("VAC_GATE_REQUIRE_FAMILY", ""))
+    ap.add_argument("--bindings", default=e("VAC_GATE_BINDINGS", ""))
     ap.add_argument("--regrade", default=e("VAC_GATE_REGRADE", "false"))
     ap.add_argument("--clone-base",
                     default=e("VAC_GATE_CLONE_BASE", DEFAULT_CLONE_BASE))
@@ -247,6 +332,13 @@ def main(argv: list[str] | None = None) -> int:
         if not a.require_family:
             skipped.append("require_family: not set — any protocol.task "
                            "passes")
+        if a.bindings:
+            check_bindings(man if isinstance(man, dict) else None,
+                           a.bindings, failures, ran, skipped)
+        else:
+            skipped.append("semantic invalidation: no bindings declared — "
+                           "recorded subject/protocol pins were not "
+                           "compared to this consumer's current inputs")
         if want_regrade:
             if isinstance(man, dict) and structural_ok:
                 run_regrade(man, bundle, tmp, a.clone_base, failures, ran)
@@ -270,6 +362,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  not run: {line}")
     print("  freshness: VAC bundles carry no dates by design — this gate "
           "proves pinned-and-honest, not recent (README, v2)")
+    print("  scope: semantic invalidation reads DECLARED bindings only — "
+          "undisclosed provider changes, runtime context, tool behavior, "
+          "and distribution shift are all outside it")
+    print("  scope: a green check is a claim-integrity result, never "
+          "runtime authorization — and never a non-repudiation claim "
+          "(bundles are unsigned by design, SPEC section 7)")
     return 1 if failures else 0
 
 

@@ -16,6 +16,7 @@ the full regrade green path runs in agent-certlab's dogfood workflow
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import shutil
@@ -26,6 +27,21 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 GATE = ROOT / "gate.py"
 CERTLAB = ROOT / "tests" / "fixtures" / "claude-code-machine-2026-08-14"
 FLEET = ROOT / "tests" / "fixtures" / "fleet-board-vac"
+BINDINGS_FIXTURE = ROOT / "tests" / "fixtures" / \
+    "bindings-claude-code-machine.json"
+
+# what the certlab fixture actually records, declared as current inputs —
+# every natural mapping exercised, including the whole-pin-object alias
+MATCHING = {"agent_id": "claude-code-headless",
+            "agent_version": {"model": None, "harness_commit": "7954393",
+                              "python": "3.14.6"},
+            "family": "machine",
+            "issuer": "egnaro9/agent-certlab",
+            "issuer_commit": "7954393",
+            "harness_commit": "7954393",
+            "python": "3.14.6",
+            "taskset_hash": "4430506556753096",
+            "prompt_hash": "a61a9abe48592e97"}
 
 
 def _env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -78,6 +94,131 @@ def test_env_configuration_matches_action_yml():
 def test_fleet_bundle_green_without_regrade():
     p = gate("--bundle-path", str(FLEET))
     assert p.returncode == 0, p.stdout + p.stderr
+
+
+# ------------------------------------------- semantic invalidation (bindings)
+def _bindings(tmp_path: pathlib.Path, obj) -> str:
+    p = tmp_path / "bindings.json"
+    p.write_text(json.dumps(obj), encoding="utf-8")
+    return str(p)
+
+
+def test_bindings_all_matching_pass(tmp_path):
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", _bindings(tmp_path, MATCHING))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert ("ran: semantic invalidation: 9 declared binding(s) compared "
+            "to recorded subject/protocol pins, 9 matched exactly"
+            ) in p.stdout
+
+
+def test_committed_bindings_fixture_matches():
+    # the fixture ci.yml feeds the composite must stay true to the bundle
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", str(BINDINGS_FIXTURE))
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_each_drifted_binding_fails_with_its_name(tmp_path):
+    for key in ("agent_id", "family", "issuer", "issuer_commit",
+                "harness_commit", "python", "taskset_hash", "prompt_hash"):
+        drifted = dict(MATCHING)
+        drifted[key] = "DRIFTED"
+        p = gate("--bundle-path", str(CERTLAB),
+                 "--bindings", _bindings(tmp_path, drifted))
+        assert p.returncode == 1, key
+        assert f"FAIL binding-drift: {key}: current 'DRIFTED' != contract " \
+            in p.stdout, (key, p.stdout)
+
+
+def test_drifted_pin_object_fails_deep_compare(tmp_path):
+    drifted = dict(MATCHING)
+    drifted["agent_version"] = {"model": None, "harness_commit": "7954393",
+                                "python": "3.99.0"}
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", _bindings(tmp_path, drifted))
+    assert p.returncode == 1
+    assert "FAIL binding-drift: agent_version:" in p.stdout
+
+
+def test_exact_means_no_type_coercion(tmp_path):
+    drifted = dict(MATCHING)
+    drifted["taskset_hash"] = 4430506556753096  # number, bundle records str
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", _bindings(tmp_path, drifted))
+    assert p.returncode == 1
+    assert "FAIL binding-drift: taskset_hash:" in p.stdout
+
+
+def test_unrecorded_binding_fails(tmp_path):
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", _bindings(tmp_path,
+                                     {**MATCHING, "temperature": 0.0}))
+    assert p.returncode == 1
+    assert ("FAIL binding-unrecorded: temperature — the contract does "
+            "not bind this input") in p.stdout
+
+
+def test_null_pin_is_unrecorded_not_matching_and_not_drift(tmp_path):
+    # the certlab bundle records subject.version.model: null — explicitly
+    # unpinned. Declaring a current model must fail, and must NOT be
+    # reported as drift: the contract never knew an old value to drift from
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", _bindings(tmp_path,
+                                     {**MATCHING,
+                                      "model": "claude-sonnet-4-6"}))
+    assert p.returncode == 1
+    assert "FAIL binding-unrecorded: model" in p.stdout
+    assert "explicitly unpinned" in p.stdout
+    assert "binding-drift: model" not in p.stdout
+
+
+def test_missing_bindings_file_fails_loudly():
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", "does/not/exist.json")
+    assert p.returncode == 1
+    assert "FAIL bindings-not-found" in p.stdout
+
+
+def test_unparsable_bindings_fails(tmp_path):
+    bad = tmp_path / "bindings.json"
+    bad.write_text("not json{", encoding="utf-8")
+    p = gate("--bundle-path", str(CERTLAB), "--bindings", str(bad))
+    assert p.returncode == 1
+    assert "FAIL bindings-unparsable" in p.stdout
+
+
+def test_non_object_bindings_fails(tmp_path):
+    p = gate("--bundle-path", str(CERTLAB),
+             "--bindings", _bindings(tmp_path, ["model"]))
+    assert p.returncode == 1
+    assert "FAIL bindings-unparsable" in p.stdout
+    assert "JSON object" in p.stdout
+
+
+def test_bindings_env_seam(tmp_path):
+    drifted = dict(MATCHING)
+    drifted["family"] = "ledger"
+    p = gate(env_extra={"VAC_GATE_BUNDLE_PATH": str(CERTLAB),
+                        "VAC_GATE_BINDINGS": _bindings(tmp_path, drifted)})
+    assert p.returncode == 1
+    assert "FAIL binding-drift: family:" in p.stdout
+
+
+def test_no_bindings_is_reported_not_silent():
+    p = gate("--bundle-path", str(CERTLAB))
+    assert p.returncode == 0
+    assert "not run: semantic invalidation: no bindings declared" in p.stdout
+
+
+def test_scope_lines_always_printed():
+    # the honesty scope must be in the output whether green or red
+    for p in (gate("--bundle-path", str(CERTLAB)),
+              gate("--bundle-path", "does/not/exist")):
+        assert "scope: semantic invalidation reads DECLARED bindings only" \
+            in p.stdout
+        assert "never runtime authorization" in p.stdout
+        assert "never a non-repudiation claim" in p.stdout
 
 
 # ----------------------------------------------------- named-failure paths

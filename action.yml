@@ -2,9 +2,10 @@ name: vac-gate
 description: >-
   Require a verified capability contract before this workflow passes: a VAC
   bundle (vac-protocol SPEC v0.1) structurally verified by the real
-  python -m vac.verify, held to exact subject/family requirements, and
-  optionally re-earned by the issuer's own regrader at the pinned commit.
-  Every failure is one named reason.
+  python -m vac.verify, held to exact subject/family requirements and to
+  consumer-declared current bindings, and optionally re-earned by the
+  issuer's own regrader at the pinned commit. Every failure is one named
+  reason.
 inputs:
   bundle_path:
     description: >-
@@ -30,6 +31,19 @@ inputs:
     description: >-
       Exact protocol.task the bundle must cover (e.g. machine); anything
       else fails with family-mismatch. Empty = any family passes.
+    required: false
+    default: ""
+  bindings:
+    description: >-
+      Path to a consumer-declared JSON object of CURRENT bound inputs
+      (e.g. {"model": ..., "agent_id": ..., "family": ...,
+      "taskset_hash": ...}). Every declared key the bundle records
+      (natural names mapped onto subject/protocol pins) must match
+      exactly or the gate fails binding-drift; a declared key the
+      contract never recorded fails binding-unrecorded — unrecorded is
+      never read as matching, and a null pin binds nothing. Detects
+      changes in DECLARED bindings only; never runtime authorization.
+      Empty = no comparison (reported as not run).
     required: false
     default: ""
   regrade:
@@ -59,5 +73,6 @@ runs:
         VAC_GATE_REGISTRY_ENTRY: ${{ inputs.registry_entry }}
         VAC_GATE_REQUIRE_AGENT: ${{ inputs.require_agent }}
         VAC_GATE_REQUIRE_FAMILY: ${{ inputs.require_family }}
+        VAC_GATE_BINDINGS: ${{ inputs.bindings }}
         VAC_GATE_REGRADE: ${{ inputs.regrade }}
       run: python3 "${GITHUB_ACTION_PATH}/gate.py"

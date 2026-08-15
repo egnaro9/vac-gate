@@ -24,7 +24,12 @@ registry — the gate:
 2. **holds it to your requirements**: `require_agent` must equal the
    bundle's `subject.id` exactly, `require_family` its `protocol.task`
    exactly — no prefix or substring matching;
-3. optionally **re-earns the verdicts** (`regrade: "true"`): clones the
+3. optionally **holds it to your current bindings** (`bindings`): a
+   consumer-declared JSON object of current bound inputs; every declared
+   key the contract records must match exactly (`binding-drift` names
+   each mismatch), and a declared key the contract never recorded fails
+   (`binding-unrecorded`) — unrecorded is not matching;
+4. optionally **re-earns the verdicts** (`regrade: "true"`): clones the
    issuer at the pinned `issuer_commit` and runs its own regrader;
    anything but `consistent` fails, including the regrader's honest
    "stale-code" refusal — "cannot regrade" is not "regraded".
@@ -51,6 +56,7 @@ jobs:
           bundle_path: certifications/claude-code-machine-2026-08-14
           require_agent: claude-code-headless
           require_family: machine
+          bindings: bindings.json
           regrade: "true"
 ```
 
@@ -75,7 +81,52 @@ committed contract with a full regrade.
 | `registry_entry` | name of an accepted entry in vac-protocol's `registry.json`; fetched via `python -m vac.registry --fetch-bundle`, every artifact sha256-checked against its registry pin. |
 | `require_agent` | exact `subject.id` the bundle must certify; empty = any. |
 | `require_family` | exact `protocol.task` the bundle must cover; empty = any. |
+| `bindings` | path to a consumer-declared JSON object of current bound inputs, held to the contract's recorded pins (see "Semantic invalidation" below); empty = no comparison, reported as not run. |
 | `regrade` | `"true"` = clone the issuer at the pinned commit and re-earn every verdict with its own regrader. Default `"false"`. |
+
+## Semantic invalidation v1: declared bindings
+
+A capability contract is earned under specific inputs. When the
+consumer's inputs move — new model, new harness commit, new task set —
+the contract has been *semantically invalidated* even though every hash
+in it still verifies. `bindings` is the consumer's declaration of its
+CURRENT bound inputs, e.g.:
+
+```json
+{"agent_id": "claude-code-headless", "family": "machine",
+ "harness_commit": "7954393", "python": "3.14.6",
+ "taskset_hash": "4430506556753096", "prompt_hash": "a61a9abe48592e97"}
+```
+
+Every declared key resolves to its recorded counterpart:
+
+| binding key | recorded counterpart |
+|---|---|
+| `agent_id` | `subject.id` |
+| `agent_kind` | `subject.kind` |
+| `agent_version` | `subject.version` — the whole pin object, compared as one value |
+| `family` | `protocol.task` |
+| `issuer` | `protocol.issuer` |
+| `issuer_commit` | `protocol.issuer_commit` |
+| anything else | `subject.version.<key>` (e.g. `model`, `harness_commit`), else `protocol.hashes.<key>` (e.g. `taskset_hash`, `prompt_hash`, `fleet_commit`), else **`binding-unrecorded`** |
+
+Rules, each a named failure:
+
+- **exact match only** — canonical-JSON equality, no type coercion
+  (`"7954393"` is not `7954393`). Any mismatch:
+  `binding-drift: <key>: current X != contract Y`.
+- **unrecorded ≠ matching** — a declared key with no recorded
+  counterpart fails: `binding-unrecorded: <key> — the contract does not
+  bind this input`. A gate that skipped it would be reading "the
+  contract says nothing" as "the contract agrees".
+- **a null pin binds nothing** — a counterpart recorded as `null` (the
+  issuer explicitly recording "not pinned", like certlab's
+  `subject.version.model`) is `binding-unrecorded`, not a match and not
+  drift: the contract never knew that input, so it can neither vouch for
+  the current value nor name an old one.
+- **a bindings input that cannot be read fails loudly** —
+  `bindings-not-found` / `bindings-unparsable`, never a silent
+  degrade to "no bindings declared".
 
 ## What a PASS means — and does not
 
@@ -89,6 +140,32 @@ committed contract with a full regrade.
   on any other profile **fails** with `regrade-unsupported` rather than
   silently skipping: a gate must never report green on a check it did not
   run.
+- **Bindings PASS** means every input the consumer *declared* equals the
+  value the contract *recorded* — nothing more.
+
+And the non-claims, stated as bluntly as the claims:
+
+- **Semantic invalidation detects changes in declared bindings only.**
+  Undisclosed provider changes (weights swapped behind a stable model
+  id), runtime context the consumer did not declare, tool behavior, and
+  distribution shift between the certified task family and live traffic
+  are ALL outside it. A green bindings check means "what you declared
+  matches what was recorded", never "nothing relevant changed".
+- **This gate is a claim-integrity control, never runtime
+  authorization.** A green check means the capability contract's
+  evidence held and the declared pins agree; it does not clear an agent
+  to act, and it is not a substitute for the human gates a deployment
+  keeps. Agent Release Readiness is a judgment made *over* replayable
+  evidence like this — the gate supplies the evidence check, not the
+  judgment.
+- **No non-repudiation.** Bundles are unsigned by design (SPEC §7): the
+  gate proves internal honesty and pin agreement, not who authored the
+  bundle. Anyone can construct a bundle that verifies structurally;
+  what they cannot fake is the issuer's regrader re-earning it at the
+  pinned commit — and even that names a repo, not a person.
+- **The contract covers exactly its pinned scope.** `subject.version`
+  and `protocol.hashes` bound what was demonstrated; nothing here
+  extrapolates to other tasks, other prompts, or other days.
 
 ## Named failure reasons
 
@@ -96,10 +173,11 @@ committed contract with a full regrade.
 `registry-clone-failed`, `registry-fetch-failed`, `vac-protocol-missing`,
 `structural-verification-failed` (with `vac.verify`'s own named reasons
 passed through: `sha256-mismatch`, `unlisted-file`, `summary-mismatch`,
-…), `agent-mismatch`, `family-mismatch`, `regrade-unsupported`,
-`issuer-unsafe`, `issuer-commit-unsafe`, `issuer-clone-failed`,
-`issuer-checkout-failed`, `issuer-install-failed`, `regrade-failed`,
-`regrade-not-consistent`.
+…), `agent-mismatch`, `family-mismatch`, `bindings-not-found`,
+`bindings-unparsable`, `binding-drift`, `binding-unrecorded`,
+`regrade-unsupported`, `issuer-unsafe`, `issuer-commit-unsafe`,
+`issuer-clone-failed`, `issuer-checkout-failed`, `issuer-install-failed`,
+`regrade-failed`, `regrade-not-consistent`.
 
 ## Freshness: the honest gap
 

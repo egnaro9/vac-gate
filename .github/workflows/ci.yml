@@ -24,3 +24,6 @@ jobs:
           bundle_path: tests/fixtures/claude-code-machine-2026-08-14
           require_agent: claude-code-headless
           require_family: machine
+          # liveness for the bindings input's action wiring too — the
+          # fixture declares exactly what the fixture bundle records
+          bindings: tests/fixtures/bindings-claude-code-machine.json
