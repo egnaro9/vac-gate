@@ -52,6 +52,20 @@ DEFAULT_CLONE_BASE = "https://github.com"  # VAC_GATE_CLONE_BASE is the
 # test seam: git clones from a local base directory exactly as from a host
 SAFE_ISSUER = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 SAFE_COMMIT = re.compile(r"[0-9a-f]{4,40}")
+_DOTS_ONLY = re.compile(r"\.+")
+
+
+def issuer_shape_ok(issuer: str) -> bool:
+    """owner/name, and neither half may be all dots.
+
+    The shape class has to admit '.' because repository names legitimately
+    contain one. That also admitted '..', so '../..' fullmatched and a
+    traversal reached the clone URL builder. Shape alone is not the control
+    (see the allowlist below); this only keeps a traversal out of the URL.
+    """
+    if not SAFE_ISSUER.fullmatch(issuer):
+        return False
+    return not any(_DOTS_ONLY.fullmatch(part) for part in issuer.split("/"))
 
 
 def _run(argv: list[str], cwd=None) -> subprocess.CompletedProcess:
@@ -206,8 +220,8 @@ def check_bindings(man: dict | None, path: str, failures: list[str],
 
 
 def run_regrade(man: dict, bundle: pathlib.Path, tmp: pathlib.Path,
-                clone_base: str, failures: list[str],
-                ran: list[str]) -> None:
+                clone_base: str, allowed_issuers: list[str],
+                failures: list[str], ran: list[str]) -> None:
     """Clone the issuer at the pinned commit and re-earn every verdict
     with its own regrader; anything but 'consistent' fails — including the
     regrader's honest 'stale-code' refusal, which exits 0 but re-earns
@@ -222,9 +236,30 @@ def run_regrade(man: dict, bundle: pathlib.Path, tmp: pathlib.Path,
         return
     issuer = man["protocol"]["issuer"]
     commit = man["protocol"]["issuer_commit"]
-    if not SAFE_ISSUER.fullmatch(issuer):
+    if not issuer_shape_ok(issuer):
         failures.append(f"issuer-unsafe: protocol.issuer {issuer!r} is not "
                         "plain owner/name; refusing to build a clone URL")
+        return
+    # THE control, and it must precede the clone. protocol.issuer is written
+    # by the bundle's author, and regrade below runs `pip install -e` on what
+    # it names, which executes that repository's build backend. Structural
+    # verification cannot stand in for this: it is a self-consistency
+    # checksum over an UNSIGNED document, so a forged bundle is internally
+    # honest about an issuer it chose. No ordering of the operations fixes
+    # that; the allowlist has to come from the consumer, who is the only
+    # party with an interest in refusing.
+    if not allowed_issuers:
+        failures.append("regrade-no-allowlist: regrade runs `pip install -e` "
+                        "on the repository protocol.issuer names, and "
+                        "protocol.issuer is written by the bundle author. "
+                        "Set allowed_issuers to the issuers this workflow "
+                        "trusts, or leave regrade false")
+        return
+    if issuer not in allowed_issuers:
+        failures.append(f"issuer-not-allowed: protocol.issuer {issuer!r} is "
+                        "not in this consumer's allowed_issuers "
+                        f"({', '.join(allowed_issuers)}); refusing to clone "
+                        "or install it")
         return
     if not SAFE_COMMIT.fullmatch(commit):
         failures.append(f"issuer-commit-unsafe: {commit!r} is not a hex "
@@ -277,10 +312,14 @@ def main(argv: list[str] | None = None) -> int:
                     default=e("VAC_GATE_REQUIRE_FAMILY", ""))
     ap.add_argument("--bindings", default=e("VAC_GATE_BINDINGS", ""))
     ap.add_argument("--regrade", default=e("VAC_GATE_REGRADE", "false"))
+    ap.add_argument("--allowed-issuers",
+                    default=e("VAC_GATE_ALLOWED_ISSUERS", ""))
     ap.add_argument("--clone-base",
                     default=e("VAC_GATE_CLONE_BASE", DEFAULT_CLONE_BASE))
     a = ap.parse_args(argv)
     want_regrade = a.regrade.strip().lower() in ("true", "1", "yes")
+    allowed_issuers = [x.strip() for x in a.allowed_issuers.split(",")
+                       if x.strip()]
 
     failures: list[str] = []
     ran: list[str] = []      # what this run actually checked
@@ -341,7 +380,8 @@ def main(argv: list[str] | None = None) -> int:
                            "compared to this consumer's current inputs")
         if want_regrade:
             if isinstance(man, dict) and structural_ok:
-                run_regrade(man, bundle, tmp, a.clone_base, failures, ran)
+                run_regrade(man, bundle, tmp, a.clone_base,
+                            allowed_issuers, failures, ran)
             elif bundle is not None:
                 skipped.append("semantic regrade: refused — no issuer code "
                                "is installed or run for a bundle that "

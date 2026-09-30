@@ -13,7 +13,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # the tests drive gate.py exactly as the composite does, so its one
       # dependency is installed the same way the composite installs it
-      - run: python -m pip install pytest "git+https://github.com/egnaro9/vac-protocol"
+      - run: python -m pip install pytest "git+https://github.com/egnaro9/vac-protocol@09c08028ee527f1231f06c32ddf4e2eb653e9594"
       - run: python -m pytest tests/ -q
       # and the action must also work AS an action: gate the committed
       # fixture through action.yml's own entry point (liveness for the
@@ -27,3 +27,18 @@ jobs:
           # liveness for the bindings input's action wiring too — the
           # fixture declares exactly what the fixture bundle records
           bindings: tests/fixtures/bindings-claude-code-machine.json
+      # the allowlist must refuse through the composite too, not only in
+      # pytest: regrade with no allowed_issuers has to fail the step, so
+      # `continue-on-error` plus an explicit outcome assertion rather than
+      # letting a green step stand in for a control that did not fire
+      - name: regrade without an allowlist must fail the action
+        id: noallow
+        continue-on-error: true
+        uses: ./
+        with:
+          bundle_path: tests/fixtures/claude-code-machine-2026-08-14
+          regrade: "true"
+      - name: assert it failed for the allowlist reason
+        run: |
+          test "${{ steps.noallow.outcome }}" = "failure" \
+            || { echo "regrade ran without an allowlist"; exit 1; }

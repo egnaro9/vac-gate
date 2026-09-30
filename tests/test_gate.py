@@ -309,12 +309,87 @@ def test_regrade_refuses_non_certlab_profile():
 def test_regrade_dispatch_reaches_issuer_clone(tmp_path):
     # clone base pointing at an empty directory: the regrade path must get
     # as far as cloning the PINNED issuer and name that failure — proving
-    # the dispatch is live without network and without installing anything
+    # the dispatch is live without network and without installing anything.
+    # The allowlist is REQUIRED to get here, which is the point of the three
+    # tests below; passing it is what makes this test about the clone.
     p = gate("--bundle-path", str(CERTLAB), "--regrade", "true",
+             "--allowed-issuers", "egnaro9/agent-certlab",
              "--clone-base", str(tmp_path))
     assert p.returncode == 1
     assert "FAIL issuer-clone-failed" in p.stdout
     assert "agent-certlab" in p.stdout  # the issuer it tried to clone
+
+
+# --------------------------------------------- issuer allowlist (regrade RCE)
+# regrade runs `pip install -e` on the repository protocol.issuer names, and
+# protocol.issuer is written by the bundle's author, so the consumer has to
+# say which issuers it trusts. Structural verification cannot substitute: it
+# is a self-consistency checksum over an unsigned document, so a forged
+# bundle is internally honest about an issuer it picked itself.
+
+def test_regrade_refuses_when_no_allowlist_is_declared(tmp_path):
+    p = gate("--bundle-path", str(CERTLAB), "--regrade", "true",
+             "--clone-base", str(tmp_path))
+    assert p.returncode == 1
+    assert "FAIL regrade-no-allowlist" in p.stdout
+    # and it stopped BEFORE the clone: the clone failure is not named
+    assert "issuer-clone-failed" not in p.stdout
+    # the bundle itself is fine; the refusal is about consumer policy
+    assert "structural verification: PASS" in p.stdout
+
+
+def test_regrade_refuses_an_issuer_outside_the_allowlist(tmp_path):
+    p = gate("--bundle-path", str(CERTLAB), "--regrade", "true",
+             "--allowed-issuers", "someone-else/trusted-tool",
+             "--clone-base", str(tmp_path))
+    assert p.returncode == 1
+    assert "FAIL issuer-not-allowed" in p.stdout
+    assert "egnaro9/agent-certlab" in p.stdout   # what it refused
+    assert "issuer-clone-failed" not in p.stdout  # again, before the clone
+
+
+def test_a_self_consistent_bundle_naming_an_attacker_repo_is_refused(
+        tmp_path):
+    """The exploit, as a regression test.
+
+    A bundle that verifies clean and satisfies both exact-match requirements
+    can still name any issuer it likes. Before the allowlist, that string
+    reached `git clone` and then `pip install -e`, which executes the cloned
+    repository's build backend: arbitrary code execution on the runner from a
+    structurally valid bundle. It must now fail before anything is fetched.
+    """
+    b = tmp_path / "bundle"
+    shutil.copytree(CERTLAB, b)
+    man = json.loads((b / "vac.json").read_text(encoding="utf-8"))
+    man["protocol"]["issuer"] = "attacker/evil"
+    (b / "vac.json").write_text(json.dumps(man, indent=1), encoding="utf-8")
+
+    p = gate("--bundle-path", str(b), "--regrade", "true",
+             "--allowed-issuers", "egnaro9/agent-certlab",
+             "--clone-base", str(tmp_path))
+    assert p.returncode == 1
+    assert "FAIL issuer-not-allowed" in p.stdout
+    assert "attacker/evil" in p.stdout
+    # nothing was fetched and nothing was installed
+    assert "issuer-clone-failed" not in p.stdout
+    assert "issuer-install-failed" not in p.stdout
+    assert not (tmp_path / "issuer").exists()
+
+
+def test_issuer_shape_refuses_a_dot_only_component():
+    """'..' fullmatched the old shape class, because '.' is in it.
+
+    So '../..' was a legal `protocol.issuer` and reached the clone URL
+    builder. Shape is not the control, but a traversal should not get that
+    far either.
+    """
+    from gate import issuer_shape_ok
+    assert issuer_shape_ok("egnaro9/agent-certlab")
+    assert issuer_shape_ok("owner/repo.name")     # a real dot still fine
+    assert not issuer_shape_ok("../..")
+    assert not issuer_shape_ok("./x")
+    assert not issuer_shape_ok("x/..")
+    assert not issuer_shape_ok("../x")
 
 
 def test_registry_mode_clone_failure_named(tmp_path):

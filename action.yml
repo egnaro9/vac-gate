@@ -55,6 +55,19 @@ inputs:
       but a 'consistent' regrade fails.
     required: false
     default: "false"
+  allowed_issuers:
+    description: >-
+      Comma-separated owner/name list of the issuers THIS workflow trusts
+      to run code on its runner. Required whenever regrade is "true":
+      regrade does `pip install -e` on the repository protocol.issuer
+      names, protocol.issuer is written by the bundle's author, and
+      structural verification is a self-consistency checksum over an
+      unsigned document, so a forged bundle is internally honest about an
+      issuer it chose itself. Unset with regrade "true" fails with
+      regrade-no-allowlist; an issuer outside the list fails with
+      issuer-not-allowed, before anything is cloned or installed.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -62,8 +75,13 @@ runs:
       # Hard requirement, never guarded: a failed install must fail the
       # gate — a silently-inert verifier reading as green is exactly what
       # this action exists to prevent.
+      #
+      # PINNED to a commit, not a branch. An action whose subject is
+      # refusing mutable pins must not install its own verifier from a
+      # moving ref: the version of the code deciding every verdict would
+      # then be whatever main happened to be that morning.
       shell: bash
-      run: python3 -m pip install --quiet "git+https://github.com/egnaro9/vac-protocol"
+      run: python3 -m pip install --quiet "git+https://github.com/egnaro9/vac-protocol@09c08028ee527f1231f06c32ddf4e2eb653e9594"
     - name: gate
       # Inputs cross into the script as environment, never interpolated
       # into shell text — an input value cannot become shell syntax.
@@ -75,4 +93,5 @@ runs:
         VAC_GATE_REQUIRE_FAMILY: ${{ inputs.require_family }}
         VAC_GATE_BINDINGS: ${{ inputs.bindings }}
         VAC_GATE_REGRADE: ${{ inputs.regrade }}
+        VAC_GATE_ALLOWED_ISSUERS: ${{ inputs.allowed_issuers }}
       run: python3 "${GITHUB_ACTION_PATH}/gate.py"

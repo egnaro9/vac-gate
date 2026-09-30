@@ -49,6 +49,7 @@
    {
     "profile": "certlab-bundle-v1",
     "artifact": "bundle.json",
+    "render": "CONTRACT.md",
     "expect": {
      "verdicts": 6,
      "fixed": 6,

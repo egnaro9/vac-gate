@@ -58,6 +58,7 @@ jobs:
           require_family: machine
           bindings: bindings.json
           regrade: "true"
+          allowed_issuers: egnaro9/agent-certlab
 ```
 
 Or gate on a registry entry instead of a committed bundle:
@@ -83,6 +84,7 @@ committed contract with a full regrade.
 | `require_family` | exact `protocol.task` the bundle must cover; empty = any. |
 | `bindings` | path to a consumer-declared JSON object of current bound inputs, held to the contract's recorded pins (see "Semantic invalidation" below); empty = no comparison, reported as not run. |
 | `regrade` | `"true"` = clone the issuer at the pinned commit and re-earn every verdict with its own regrader. Default `"false"`. |
+| `allowed_issuers` | comma-separated `owner/name` list of the issuers **this workflow trusts to run code on its runner**. Required whenever `regrade` is `"true"`; unset fails `regrade-no-allowlist`, an issuer outside the list fails `issuer-not-allowed`, both before anything is cloned. See "Security posture". |
 
 ## Semantic invalidation v1: declared bindings
 
@@ -175,7 +177,8 @@ And the non-claims, stated as bluntly as the claims:
 passed through: `sha256-mismatch`, `unlisted-file`, `summary-mismatch`,
 …), `agent-mismatch`, `family-mismatch`, `bindings-not-found`,
 `bindings-unparsable`, `binding-drift`, `binding-unrecorded`,
-`regrade-unsupported`, `issuer-unsafe`, `issuer-commit-unsafe`,
+`regrade-unsupported`, `regrade-no-allowlist`, `issuer-not-allowed`,
+`issuer-unsafe`, `issuer-commit-unsafe`,
 `issuer-clone-failed`, `issuer-checkout-failed`, `issuer-install-failed`,
 `regrade-failed`, `regrade-not-consistent`.
 
@@ -203,10 +206,42 @@ this gate does not pretend.
 The manifest's `replay.commands` are **never executed** — they are opaque
 shell text addressed to humans (SPEC section 2.6), and executing them
 from a gate would hand any bundle author a shell. Regrade is structured
-from validated fields only: `protocol.issuer` must be plain `owner/name`,
-`issuer_commit` a hex commit, every subprocess is list-form, and no
-issuer code is installed or run unless structural verification passed
-first.
+from validated fields only: `protocol.issuer` must be plain `owner/name`
+with no dot-only path component, `issuer_commit` a hex commit, every
+subprocess is list-form, and no issuer code is installed or run unless
+structural verification passed first. Action inputs cross into the script
+as environment variables rather than being interpolated into `run:` text,
+so an input value cannot become shell syntax.
+
+**`regrade` requires `allowed_issuers`, and here is why.** Regrade does
+`pip install -e` on the repository `protocol.issuer` names, which executes
+that repository's build backend. `protocol.issuer` is written by the
+bundle's author. Structural verification cannot stand in for trusting it:
+verification is a **self-consistency checksum over an unsigned document**,
+so a forged bundle is internally honest about an issuer it picked itself.
+Bundles are unsigned by design (SPEC section 7), so no ordering of the
+operations fixes this. The allowlist has to come from the consumer, the
+only party with an interest in refusing. Without it, regrade refuses.
+
+### Finding, found and fixed here
+Before the allowlist, a fully self-consistent bundle that passed
+structural verification and both exact-match requirements could name any
+`protocol.issuer` it liked and reach `git clone` followed by
+`pip install -e`: **arbitrary code execution on the runner from a
+structurally valid bundle.** The shape check was the only thing between
+the author's string and the clone URL, and shape is not trust. The same
+regex also admitted `../..`, because `.` is inside its character class.
+
+Both are closed, and the exploit is a permanent regression test
+(`test_a_self_consistent_bundle_naming_an_attacker_repo_is_refused`)
+asserting that nothing is fetched and nothing is installed. The three
+allowlist tests are mutation-checked: deleting the guard turns three red,
+disabling only the membership check turns two red, and removing the
+dot-only rule turns the shape test red.
+
+The cause was a category error worth naming, because it is the mistake
+this whole repo exists to argue against: reading a checksum as an
+authentication.
 
 ## Development
 
